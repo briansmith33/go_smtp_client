@@ -10,7 +10,6 @@ import (
 	"strings"
 	"encoding/base64"
 	"crypto/md5"
-	"crypto/sha256"
     "encoding/hex"
 	"crypto/hmac"
 	"github.com/joho/godotenv"
@@ -196,7 +195,14 @@ func (c *SMTPClient) Auth(method string) {
 		return
 	}
 	if (method == "DIGEST-MD5") {
-		hash := md5.Sum([]byte(c.Password))
+		nonce := strings.Trim(response[len("334 "):], "\r\n")
+		decodedNonce, err := base64.StdEncoding.DecodeString(nonce)
+		if err != nil {
+			fmt.Println("Error Found:", err)
+			return
+		}
+
+		hash := md5.Sum([]byte(c.Password+string(decodedNonce[:])))
 		credentials := base64.StdEncoding.EncodeToString([]byte(hex.EncodeToString(hash[:])))
 		fmt.Fprintf(c.Conn, credentials+"\r\n")
 		response, err := bufio.NewReader(c.Conn).ReadString('\n')
@@ -217,45 +223,6 @@ func (c *SMTPClient) Auth(method string) {
 
 		sig := hmac.New(md5.New, key)
 		sig.Write([]byte(challenge))
-		credentials := base64.StdEncoding.EncodeToString([]byte(hex.EncodeToString(sig.Sum(nil))))
-		fmt.Fprintf(c.Conn, credentials+"\r\n")
-		response, err := bufio.NewReader(c.Conn).ReadString('\n')
-		if err != nil {
-			fmt.Println(err)
-		}
-		fmt.Print(response)
-		if (strings.HasPrefix(response, "235")) {
-			c.IsAuthenticated = true
-		}
-		return
-	}
-	if (method == "DIGEST-SHA256") {
-		h := sha256.New()
-		h.Write([]byte(c.Password))
-
-		credentials := base64.StdEncoding.EncodeToString([]byte(hex.EncodeToString(h.Sum(nil))))
-
-		fmt.Fprintf(c.Conn, credentials+"\r\n")
-		response, err := bufio.NewReader(c.Conn).ReadString('\n')
-		if err != nil {
-			fmt.Println(err)
-		}
-		fmt.Print(response)
-		if (strings.HasPrefix(response, "235")) {
-			c.IsAuthenticated = true
-		}
-		return
-	}
-	if (method == "CRAM-SHA256") {
-		challenge := strings.Trim(response[len("334 "):], "\r\n")
-
-		secretHash := md5.New()
-		secretHash.Write([]byte(c.Password))
-		key := secretHash.Sum(nil)
-
-		sig := hmac.New(sha256.New, key)
-		sig.Write([]byte(challenge))
-
 		credentials := base64.StdEncoding.EncodeToString([]byte(hex.EncodeToString(sig.Sum(nil))))
 		fmt.Fprintf(c.Conn, credentials+"\r\n")
 		response, err := bufio.NewReader(c.Conn).ReadString('\n')
